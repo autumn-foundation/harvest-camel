@@ -9,7 +9,7 @@
 //! which is all the dedupe guarantee is about.
 
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use autumn_harvest::WorkflowContext;
 use autumn_harvest::scheduler::{DagCatalog, SchedulerMonitor};
@@ -27,16 +27,16 @@ use camel_builder::{RouteBuilder, StepAccumulator};
 use camel_component_api::{NoOpComponentContext, RuntimeObservability};
 use camel_component_direct::DirectComponent;
 use camel_core::CamelContext;
-use diesel::sql_types::{BigInt, Bool, Text};
-use diesel_async::pooled_connection::AsyncDieselConnectionManager;
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use diesel::sql_types::{BigInt, Text};
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use harvest_camel::{CamelSource, HarvestBridge, check_route, is_unsettled};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
 use tower::ServiceExt;
 
-const DB_ENV: &str = "HARVEST_CAMEL_TEST_DATABASE_URL";
-const CONNECTOR_DLQ_SQL: &str = include_str!("sql/harvest_connector_dead_letters.sql");
+mod common;
+
+use common::{build_pool, database_url, migrate, nonce};
 
 #[autumn_harvest::prelude::workflow]
 async fn fulfil_order(_ctx: &WorkflowContext, input: Value) -> Result<Value, String> {
@@ -45,66 +45,10 @@ async fn fulfil_order(_ctx: &WorkflowContext, input: Value) -> Result<Value, Str
 
 // ───────────────────────────── database ─────────────────────────────
 
-fn database_url() -> Option<String> {
-    let url = std::env::var(DB_ENV).ok();
-    if url.is_none() {
-        eprintln!("skipping: set {DB_ENV} to a Postgres URL to run the e2e tests");
-    }
-    url
-}
-
 #[derive(diesel::QueryableByName)]
 struct Count {
     #[diesel(sql_type = BigInt)]
     n: i64,
-}
-
-#[derive(diesel::QueryableByName)]
-struct Exists {
-    #[diesel(sql_type = Bool)]
-    present: bool,
-}
-
-async fn table_exists(conn: &mut AsyncPgConnection, table: &str) -> bool {
-    diesel::sql_query("SELECT to_regclass($1) IS NOT NULL AS present")
-        .bind::<Text, _>(table)
-        .load::<Exists>(conn)
-        .await
-        .expect("to_regclass")[0]
-        .present
-}
-
-/// Apply the harvest schema once per database, serialized across the
-/// concurrently running tests by an advisory lock.
-async fn migrate(url: &str) -> AsyncPgConnection {
-    let mut conn = AsyncPgConnection::establish(url)
-        .await
-        .expect("connect to test database");
-    conn.batch_execute("SELECT pg_advisory_lock(7_319_001)")
-        .await
-        .expect("advisory lock");
-    if !table_exists(&mut conn, "harvest_workflow_executions").await {
-        conn.batch_execute(autumn_harvest::full_migrations_sql())
-            .await
-            .expect("apply harvest migrations");
-    }
-    if !table_exists(&mut conn, "harvest_connector_dead_letters").await {
-        conn.batch_execute(CONNECTOR_DLQ_SQL)
-            .await
-            .expect("apply connector dead-letter migration");
-    }
-    conn.batch_execute("SELECT pg_advisory_unlock(7_319_001)")
-        .await
-        .expect("advisory unlock");
-    conn
-}
-
-fn build_pool(url: &str) -> DbPool {
-    let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(url);
-    deadpool::managed::Pool::builder(manager)
-        .max_size(4)
-        .build()
-        .expect("pool")
 }
 
 async fn executions_with_prefix(conn: &mut AsyncPgConnection, prefix: &str) -> i64 {
@@ -117,16 +61,6 @@ async fn executions_with_prefix(conn: &mut AsyncPgConnection, prefix: &str) -> i
     .await
     .expect("count")[0]
         .n
-}
-
-/// Dedupe claims outlive a test run in a shared database, so every run uses
-/// fresh ids and topics.
-fn nonce() -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{nanos:x}")
 }
 
 // ───────────────────────────── harness ─────────────────────────────

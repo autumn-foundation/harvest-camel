@@ -4,7 +4,7 @@
 //!
 //! camel supplies connector breadth (Kafka, JMS, SQL, HTTP, file, …) and
 //! stateless routing; harvest owns everything that must survive a crash. The
-//! durability boundaries are exactly two:
+//! durability boundaries are:
 //!
 //! * **Inbound** — the `harvest:` camel producer ([`HarvestComponent`]) feeds
 //!   a harvest [`EventSource`](autumn_harvest_plugin::connector::EventSource)
@@ -14,6 +14,10 @@
 //!   coordinates.
 //! * **Outbound** — activities call camel routes with [`call_route`] /
 //!   [`call_route_from_activity`]; harvest owns the retries.
+//! * **Request/reply** — a workflow parks on a harvest *external activity*;
+//!   `harvest-external:` dispatches it into a camel route and
+//!   `harvest-complete:` / `harvest-fail:` settle it when the reply arrives
+//!   ([`external`], [`ExternalTasks`]).
 //!
 //! Nothing between those two points is durable: a camel `Exchange` is not
 //! serializable and an in-flight pipeline dies with the process.
@@ -22,10 +26,15 @@
 //! configuration ([`check_route`]).
 
 mod check;
+pub mod external;
 mod route;
 mod source;
 
 pub use check::{RouteCheckError, check_error_handler, check_route};
+pub use external::{
+    COMPLETE_SCHEME, EXTERNAL_SCHEME, ExternalTasks, FAIL_SCHEME, HEADER_EXTERNAL_TOKEN,
+    HarvestExternalComponent, HarvestSettleComponent,
+};
 pub use route::{
     CamelHandle, HEADER_ACTIVITY_TYPE, HEADER_ATTEMPT, HEADER_IDEMPOTENCY_KEY, HEADER_WORKFLOW_ID,
     call_route, call_route_from_activity, is_retryable, to_activity_failure,
