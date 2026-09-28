@@ -151,19 +151,19 @@ pub async fn call_route(
         return Err(err);
     }
     let reply = exchange.output.unwrap_or(exchange.input);
-    body_to_json(reply.body).await
+    body_to_json(reply.body, MAX_REPLY_BYTES).await
 }
 
 /// Largest reply body [`call_route`] reads: harvest's 2 MiB result cap.
 const MAX_REPLY_BYTES: usize = 2 * 1024 * 1024;
 
-async fn body_to_json(body: Body) -> Result<Value, CamelError> {
+pub(crate) async fn body_to_json(body: Body, max_bytes: usize) -> Result<Value, CamelError> {
     match body {
         Body::Empty => Ok(Value::Null),
         Body::Json(v) => Ok(v),
         Body::Text(s) | Body::Xml(s) => Ok(serde_json::from_str(&s).unwrap_or(Value::String(s))),
         other => {
-            let bytes = other.into_bytes(MAX_REPLY_BYTES).await?;
+            let bytes = other.into_bytes(max_bytes).await?;
             if bytes.is_empty() {
                 return Ok(Value::Null);
             }

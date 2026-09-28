@@ -37,8 +37,9 @@ camel ↔ harvest compatibility matrix.
                                           camel route ─► http / jms / kafka producer ─► world
 ```
 
-There are exactly two durability boundaries: the `harvest:` producer and the
-activity call. Nothing between them is durable. A camel `Exchange` cannot be
+The durability boundaries are the `harvest:` producer, the activity call, and
+the external-activity handoff (`harvest-external:` out, `harvest-complete:` /
+`harvest-fail:` back). Nothing between them is durable. A camel `Exchange` cannot be
 serialized, and an in-flight pipeline dies with the process. So don't wrap a
 camel pipeline in a tower `Layer` to try to make it durable.
 
@@ -219,6 +220,109 @@ async fn charge_card(ctx: &ActivityContext, input: Value) -> Result<Value, Activ
 deterministic failure therefore fails only after harvest's retry policy is
 exhausted.
 
+## Request/reply: external activities
+
+Some replies arrive asynchronously, over JMS, Kafka or a webhook, minutes or
+days after the request was sent. Make the workflow wait on harvest's **external
+activity** and let camel carry the request out and the reply back:
+
+```rust,ignore
+#[workflow]
+async fn charge_order(ctx: &WorkflowContext, order: Value) -> Result<Value, String> {
+    // Parks durably; no worker slot is held while waiting.
+    let receipt = ctx
+        .execute_activity_external("charge_card", order, "default", 24 * 3600)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(receipt)
+}
+```
+
+```rust,ignore
+let mut conn = pool.get().await?;
+harvest_camel::external::migrate(&mut conn).await?;   // claim table, idempotent
+harvest_camel::ExternalTasks::new(pool.clone()).register(&mut camel);
+
+// out: each pending charge_card handoff becomes one exchange
+RouteBuilder::from("harvest-external:charge_card")
+    .to("jms:queue:charge-requests")      // the request carries HarvestExternalToken
+    .build()?;
+// back: the payment system echoes the token on its reply
+RouteBuilder::from("jms:queue:charge-replies")
+    .to("harvest-complete:charge_card")   // or harvest-fail:
+    .build()?;
+```
+
+Harvest never pushes an external activity's token anywhere. It records a
+PENDING handoff and waits. So `harvest-external:<activity>` **polls** for
+PENDING handoffs of that activity and handles each one as follows:
+
+1. It **claims** the token in `harvest_camel_external_claims`, a table this
+   crate owns, with a lease. Only one consumer can hold a token, across any
+   number of app instances.
+2. It sends an exchange into the route. The body is the activity input, and
+   these headers are set:
+
+   | Header | Value |
+   |---|---|
+   | `HarvestExternalToken` | the token |
+   | `HarvestWorkflowId`, `HarvestWorkflowName`, `HarvestActivityName` | the waiting workflow and activity |
+   | `HarvestExternalDeadline` | RFC 3339 schedule-to-close deadline |
+   | `HarvestDispatchAttempt` | 1-based dispatch count |
+
+3. If the route returns `Ok`, the claim is marked **dispatched** and the token
+   is never sent again. If the route returns `Err`, the claim is released and
+   the token is dispatched again after `retryDelay`.
+
+Dispatch is **at least once**. If a process dies after the route returned but
+before the claim was marked dispatched, the token is dispatched again once the
+lease lapses. The same happens if the route takes longer than `lease`. The
+token is stable, so downstream systems should dedupe on it.
+
+A request that is lost after dispatch is never retried by this crate.
+Harvest's own `schedule_to_close` deadline fails the activity instead.
+
+| `harvest-external:` option | Default | Meaning |
+|---|---|---|
+| `pollInterval` | `1000` | ms between polls when idle |
+| `batchSize` | `16` | handoffs claimed per poll |
+| `lease` | `60000` | ms a claim is held while the route runs; must exceed the route's worst-case latency |
+| `retryDelay` | `5000` | ms before a token whose route failed is dispatched again |
+| `claimRetention` | 7 days | dispatched claims older than this are pruned |
+
+On the reply side, `harvest-complete:<label>` reads the `HarvestExternalToken`
+header and completes the activity. The body becomes the activity's JSON output:
+a JSON body as-is, text or bytes parsed as JSON (falling back to a string), and
+an empty body as `null`. `harvest-fail:<label>` fails the activity instead. The
+failure message is taken from the `HarvestExternalError` header if present,
+otherwise from the body.
+
+| Producer option | Default | Meaning |
+|---|---|---|
+| `tokenHeader` | `HarvestExternalToken` | header holding the token |
+| `onUnknownToken` | `fail` | `fail` the exchange, or `ignore` it (Ok, `HarvestExternalSettled=false`) |
+| `maxBodySize` | 2 MiB | `harvest-complete:` only: largest output accepted |
+| `retryable` | `false` | `harvest-fail:` only: recorded on the failure; the `HarvestExternalRetryable` header overrides it |
+
+- A token that has already been completed or failed is a no-op, reported as
+  `HarvestExternalSettled=false`. Redelivered replies are therefore harmless.
+- A reply route consuming from Kafka should still follow the
+  [required route configuration](#required-route-configuration). A database
+  error while settling returns `Err`, so the reply is redelivered.
+
+Scope and caveats:
+
+- **Single shard.** `ExternalTasks` takes one pool: the database harvest runs on.
+- **Payload codecs.** If harvest encrypts or compresses payloads, pass the same
+  codecs with `ExternalTasks::with_codecs`.
+- **No claim-check inflation.** Inputs that were offloaded to a `PayloadStore`
+  are not inflated.
+- **Couples to harvest internals.** The consumer reads `harvest_external_tasks`
+  and `harvest_workflow_executions`, the same columns as harvest's public
+  `list_external_handoffs`. It also reads history through harvest's
+  `#[doc(hidden)]` `store::load_history_with_codecs`. Both are pinned by the
+  compatibility table above and covered by the e2e tests.
+
 ## Payload limits
 
 By default harvest caps activity input and results at 2 MiB, workflow input
@@ -233,8 +337,12 @@ cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test                              # unit + camel-only integration tests
 HARVEST_CAMEL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
-  cargo test --test e2e_postgres        # applies the harvest schema on first use
+  cargo test --test e2e_postgres --test e2e_external   # applies the harvest schema on first use
 ```
+
+`e2e_external` runs a real harvest worker: a workflow parks on an external
+activity, `harvest-external:` dispatches it to a camel route, and the reply
+through `harvest-complete:` resumes the workflow.
 
 Without `HARVEST_CAMEL_TEST_DATABASE_URL`, the Postgres e2e tests print a
 notice and pass without running. CI runs them against a `postgres:16` service

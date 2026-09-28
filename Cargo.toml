@@ -22,14 +22,16 @@ async-trait = "0.1"
 serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
+# Claim table and external-task settlement. Versions match autumn-harvest
+# 0.6.0 so the pool type is the engine's own `DbPool`.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+deadpool = "0.13"
+diesel = { version = "2.3", features = ["postgres_backend", "uuid", "chrono"] }
+diesel-async = { version = "0.9", features = ["deadpool", "postgres"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 autumn-harvest = { version = "0.6.0", features = ["testing"] }
 camel-builder = "0.55"
 camel-component-direct = "0.55"
-tokio-util = { version = "0.7", features = ["rt"] }
-# Only for the Postgres e2e test; versions match autumn-harvest 0.6.0 so the
-# pool type is the engine's own `DbPool`.
-deadpool = "0.13"
-diesel = { version = "2.3", features = ["postgres_backend"] }
-diesel-async = { version = "0.9", features = ["deadpool", "postgres"] }
