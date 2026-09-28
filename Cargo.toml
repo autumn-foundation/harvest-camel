@@ -1,0 +1,34 @@
+[package]
+name = "harvest-camel"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+description = "Bridge rust-camel's connectors and routing into autumn-harvest's durable workflows"
+repository = "https://github.com/autumn-foundation/harvest-camel"
+readme = "README.md"
+keywords = ["camel", "workflow", "integration", "durable", "eip"]
+categories = ["asynchronous", "network-programming"]
+
+[dependencies]
+autumn-harvest = "0.6.0"
+autumn-harvest-plugin = { version = "0.6.0", features = ["connectors"] }
+camel-api = "0.55"
+camel-component-api = "0.55"
+camel-core = "0.55"
+tokio = { version = "1", features = ["full"] }
+tower = { version = "0.5", features = ["util"] }
+async-trait = "0.1"
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+
+[dev-dependencies]
+camel-builder = "0.55"
+camel-component-direct = "0.55"
+tokio-util = { version = "0.7", features = ["rt"] }
+# Only for the Postgres e2e test; versions match autumn-harvest 0.6.0 so the
+# pool type is the engine's own `DbPool`.
+deadpool = "0.13"
+diesel = { version = "2.3", features = ["postgres_backend"] }
+diesel-async = { version = "0.9", features = ["deadpool", "postgres"] }
