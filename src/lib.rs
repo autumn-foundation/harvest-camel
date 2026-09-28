@@ -19,7 +19,7 @@
 //!   `harvest-complete:` / `harvest-fail:` settle it when the reply arrives
 //!   ([`external`], [`ExternalTasks`]).
 //!
-//! Nothing between those two points is durable: a camel `Exchange` is not
+//! Nothing between these boundaries is durable: a camel `Exchange` is not
 //! serializable and an in-flight pipeline dies with the process.
 //!
 //! See the README for the wiring, the dedupe rules and the required route
