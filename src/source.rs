@@ -902,7 +902,9 @@ mod tests {
 
         // First fills the single slot; second must wait for room.
         let first = tokio::spawn(p.clone().oneshot(id_exchange("m-1")));
-        tokio::task::yield_now().await;
+        while component.tx.capacity() > 0 {
+            tokio::task::yield_now().await;
+        }
         let mut second = tokio::spawn(p.oneshot(id_exchange("m-2")));
         assert!(
             tokio::time::timeout(Duration::from_millis(100), &mut second)

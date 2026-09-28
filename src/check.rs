@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn first_match_wins() {
         let cfg = ErrorHandlerConfig::log_only()
-            .on_exception(|e| is_unsettled(e))
+            .on_exception(is_unsettled)
             .build()
             .on_exception(|_| true)
             .handled(true)

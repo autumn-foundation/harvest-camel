@@ -24,6 +24,7 @@ thiserror = "2"
 tracing = "0.1"
 
 [dev-dependencies]
+autumn-harvest = { version = "0.6.0", features = ["testing"] }
 camel-builder = "0.55"
 camel-component-direct = "0.55"
 tokio-util = { version = "0.7", features = ["rt"] }

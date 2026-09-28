@@ -404,6 +404,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn call_route_from_activity_without_a_handle_is_non_retryable() {
+        let ctx = ActivityContext::new_test();
+        let failure = call_route_from_activity(&ctx, "direct:x", Value::Null)
+            .await
+            .unwrap_err();
+        assert!(failure.non_retryable);
+        assert_eq!(failure.error_type, "camel.NoHandle");
+    }
+
+    #[tokio::test]
     async fn call_route_surfaces_errors() {
         let handle = CamelHandle::new();
         handle.insert(
