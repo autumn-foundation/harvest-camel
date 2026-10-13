@@ -35,3 +35,8 @@ uuid = { version = "1", features = ["v4"] }
 autumn-harvest = { version = "0.7.0", features = ["testing"] }
 camel-builder = "0.55"
 camel-component-direct = "0.55"
+
+# `test = true`: `cargo test --all-targets` runs the example's own test.
+[[example]]
+name = "order_flow"
+test = true
