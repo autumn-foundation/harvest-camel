@@ -1,4 +1,5 @@
-//! Runnable order flow: camel handles the edges, harvest handles the middle.
+//! An order flow: camel connects to the external systems, and harvest runs
+//! the workflow.
 //!
 //! ```text
 //! direct:orders ─► harvest:orders ─► workflow process_order
@@ -8,8 +9,8 @@
 //! ```
 //!
 //! The `direct:` routes replace real connectors (Kafka, HTTP, JMS).
-//! The example sends the same order two times, as a broker does after a
-//! crash. Harvest starts one workflow, so stock is reserved one time.
+//! The example sends the same order two times, the same as a broker after a
+//! crash. Harvest starts one workflow, so the inventory route runs one time.
 //! The example checks its result and exits with an error if it is wrong.
 //!
 //! ```sh
@@ -27,9 +28,7 @@ use autumn_harvest::prelude::{ActivityContext, WorkflowContext, activity, workfl
 use autumn_harvest::telemetry::NoOpMetrics;
 use autumn_harvest::worker::DbPool;
 use autumn_harvest_plugin::api::HarvestApiState;
-use autumn_harvest_plugin::connector::{
-    ConnectorRuntime, EventSource, MappedMessage, SourceBinding, resolve_idempotency_mode,
-};
+use autumn_harvest_plugin::connector::{ConnectorRuntime, MappedMessage, SourceBinding};
 use autumn_harvest_plugin::{
     HarvestDatabaseConfig, HarvestMode, HarvestRunner, HarvestRunnerResources, HarvestRuntimeConfig,
 };
@@ -49,11 +48,13 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 const ORDERS: &str = "direct:orders";
 const INVENTORY: &str = "direct:inventory";
-/// Header with a message id that does not change on redelivery.
-/// Harvest uses it to find duplicates.
+/// The header with the message id. The id does not change when the broker
+/// sends the message again. Harvest uses the id to find duplicates.
 const MESSAGE_ID: &str = "MessageId";
+/// The maximum time for one run. CI must not hang.
+const RUN_TIMEOUT: Duration = Duration::from_secs(120);
 
-// ─────────────────────────── harvest: the durable middle ───────────────────────────
+// ─────────────────────────── harvest: workflow and activity ───────────────────────────
 
 #[workflow]
 async fn process_order(ctx: &WorkflowContext, order: Value) -> Result<Value, String> {
@@ -61,7 +62,8 @@ async fn process_order(ctx: &WorkflowContext, order: Value) -> Result<Value, Str
         .execute_activity(&reserve_stock_info(), order.clone())
         .await
         .map_err(|e| e.to_string())?;
-    // Waits until camel completes the token. The wait survives a crash.
+    // The workflow waits until camel completes the token. A crash does not
+    // stop the wait.
     let payment = ctx
         .execute_activity_external("charge_card", order.clone(), "default", 300)
         .await
@@ -73,29 +75,31 @@ async fn process_order(ctx: &WorkflowContext, order: Value) -> Result<Value, Str
     }))
 }
 
-/// Only activities call camel. Workflow code is replayed.
+/// Harvest replays workflow code. Thus, only activities call camel.
 #[activity(start_to_close = "30s")]
 async fn reserve_stock(ctx: &ActivityContext, order: Value) -> Result<Value, ActivityFailure> {
     call_route_from_activity(ctx, INVENTORY, order).await
 }
 
-// ─────────────────────────── camel: the stateless edges ───────────────────────────
+// ─────────────────────────────────── camel: routes ───────────────────────────────────
 
-/// Builds the routes. `reserved` records the order id of each inventory call.
+/// Makes the routes. `reserved` gets the order id of each inventory call.
 fn routes(reserved: Arc<Mutex<Vec<Value>>>) -> Result<Vec<camel_core::RouteDefinition>, BoxError> {
-    // Inbound. In production: `from("kafka:orders?…")`.
+    // The inbound route. In production, use `from("kafka:…")` and set
+    // `CamelContext::builder().supervision(..)`.
     let inbound = RouteBuilder::from(ORDERS)
         .route_id("orders-in")
         .to(format!("harvest:orders?idHeader={MESSAGE_ID}"))
         .build()?;
-    // Refuse error handlers that would turn an abandon into a commit.
-    check_route(&inbound)?;
 
-    // Outbound. In production: an `http:` producer.
+    // The outbound route. In production, use an `http:` producer. Do not
+    // add `.retry(n)`: harvest retries the activity. The service can use the
+    // `HarvestIdempotencyKey` header to find duplicates.
     let inventory = RouteBuilder::from(INVENTORY)
         .route_id("inventory")
         .process(move |mut ex: Exchange| {
             let order = json_body(&ex);
+            // Only for the check at the end of `run`.
             reserved
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -108,12 +112,13 @@ fn routes(reserved: Arc<Mutex<Vec<Value>>>) -> Result<Vec<camel_core::RouteDefin
         })
         .build()?;
 
-    // Request out. In production: `.to("jms:queue:charge-requests")`.
+    // The request route. In production, use `.to("jms:queue:charge-requests")`.
+    // `pollInterval=100` makes the example fast. The default is 1000 ms.
     let charge_requests = RouteBuilder::from("harvest-external:charge_card?pollInterval=100")
         .route_id("charge-requests")
         .to("direct:payment-gateway")
         .build()?;
-    // Reply back. In production: `from("jms:queue:charge-replies")`.
+    // The reply route. In production, use `from("jms:queue:charge-replies")`.
     // The reply keeps the `HarvestExternalToken` header of the request.
     let charge_replies = RouteBuilder::from("direct:payment-gateway")
         .route_id("charge-replies")
@@ -131,6 +136,8 @@ fn routes(reserved: Arc<Mutex<Vec<Value>>>) -> Result<Vec<camel_core::RouteDefin
     Ok(vec![inbound, inventory, charge_requests, charge_replies])
 }
 
+/// The JSON body. `direct:` keeps JSON. A real connector can send text or
+/// bytes, which this function changes to `null`.
 fn json_body(ex: &Exchange) -> Value {
     match &ex.input.body {
         Body::Json(v) => v.clone(),
@@ -140,40 +147,15 @@ fn json_body(ex: &Exchange) -> Value {
 
 // ─────────────────────────────────── wiring ───────────────────────────────────
 
-/// What one run of the flow did.
-#[derive(Debug)]
-pub struct Outcome {
-    /// The order id of this run.
-    pub order_id: String,
-    /// The workflow result.
-    pub result: Value,
-    /// The number of inventory calls for this order.
-    pub inventory_calls: usize,
+/// Runs the flow against the Postgres database at `url` and checks the
+/// result.
+async fn run(url: &str) -> Result<Value, BoxError> {
+    tokio::time::timeout(RUN_TIMEOUT, run_unbounded(url))
+        .await
+        .map_err(|_| format!("the order flow did not stop in {RUN_TIMEOUT:?}"))?
 }
 
-impl Outcome {
-    /// Makes sure that the order is reserved one time and charged.
-    pub fn check(&self) -> Result<(), String> {
-        let expected = json!({
-            "order_id": self.order_id,
-            "reservation": {"sku": "sku-1", "reserved": 2},
-            "payment": {"approved": true, "amount": 42},
-        });
-        if self.result != expected {
-            return Err(format!("result {} is not {expected}", self.result));
-        }
-        if self.inventory_calls != 1 {
-            return Err(format!(
-                "the order was sent two times, but stock was reserved {} times",
-                self.inventory_calls
-            ));
-        }
-        Ok(())
-    }
-}
-
-/// Runs the flow against the Postgres database at `url`.
-pub async fn run(url: &str) -> Result<Outcome, BoxError> {
+async fn run_unbounded(url: &str) -> Result<Value, BoxError> {
     migrate(url).await?;
     let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(url);
     let pool: DbPool = deadpool::managed::Pool::builder(manager).build()?;
@@ -186,23 +168,24 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
     camel.register_component(harvest_component);
     ExternalTasks::new(pool.clone()).register(&mut camel);
     for route in routes(Arc::clone(&reserved))? {
+        // Refuse error handlers that change an abandoned message into a
+        // committed message.
+        check_route(&route)?;
         camel.add_route_definition(route).await?;
     }
     camel.start().await?;
 
-    // Resolve the endpoints before an activity can call them.
+    // Activities get this handle. Resolve their endpoints before they run.
     let handle = CamelHandle::new();
     handle.resolve(&camel, INVENTORY)?;
-    handle.resolve(&camel, ORDERS)?;
 
     // harvest: a worker runs the workflow and the activity. In production,
-    // `HarvestPlugin` starts the worker, applies the migrations and adds a
-    // dead-letter sink.
+    // `HarvestPlugin` starts the worker and the connector.
     let runner = HarvestRunner::start(
         autumn_harvest::HarvestBuilder::new()
             .workflows(vec![process_order_info()])
             .activities(vec![reserve_stock_info()])
-            .state(handle.clone())
+            .state(handle)
             .build(),
         &HarvestRuntimeConfig {
             mode: HarvestMode::External,
@@ -216,7 +199,9 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
     .await
     .map_err(|e| e.to_string())?;
 
-    // harvest: the connector starts one workflow per message on stream "orders".
+    // harvest: the connector reads stream "orders" and starts one workflow
+    // for each new message. `HarvestPlugin` also adds a dead-letter sink.
+    // Without it, a bad message is abandoned and the broker sends it again.
     let api = HarvestApiState::new();
     api.install_storage_pool(runner.storage_pool());
     api.install(runner.api_runtime());
@@ -226,28 +211,58 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
             Ok::<_, &str>(MappedMessage::new(id.to_string(), order))
         },
     );
-    let mode = resolve_idempotency_mode(binding.target, binding.idempotency_mode, None);
-    let connector = ConnectorRuntime::new(
+    let connector = ConnectorRuntime::for_binding(
         Arc::new(binding),
-        source as Arc<dyn EventSource>,
+        source,
         api,
         Arc::new(NoOpMetrics),
-        mode,
+        Some(&process_order_info()),
     );
     let cancel = CancellationToken::new();
-    tokio::spawn({
+    let connector = tokio::spawn({
         let cancel = cancel.clone();
         async move { connector.run(cancel).await }
     });
 
-    // Use a new id for each run. With a fixed id, harvest gives the result of the first run.
+    let result = send_order_and_wait(&camel, &pool, url).await;
+
+    // Stop in all cases: the connector, then the worker, then camel.
+    cancel.cancel();
+    connector.await?;
+    runner.stop().await;
+    camel.stop().await?;
+
+    let (order_id, result) = result?;
+    let calls = reserved
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .iter()
+        .filter(|id| **id == order_id)
+        .count();
+    check(&order_id, &result, calls)?;
+    Ok(result)
+}
+
+/// Sends one order two times, as a broker does. Returns the order id and the
+/// workflow result.
+async fn send_order_and_wait(
+    camel: &CamelContext,
+    pool: &DbPool,
+    url: &str,
+) -> Result<(String, Value), BoxError> {
+    // This example is also the broker. Activities do not get this handle.
+    let broker = CamelHandle::new();
+    broker.resolve(camel, ORDERS)?;
+
+    // Use a new order id for each run. If not, harvest finds the workflow of
+    // an earlier run.
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let order_id = format!("order-{nanos:x}");
     let order = json!({"order_id": order_id, "sku": "sku-1", "quantity": 2, "amount": 42});
-    // Send the same message two times. Each send returns when harvest holds the message.
+    // `call_route` returns after harvest accepts the message.
     for _ in 0..2 {
         let headers = [(MESSAGE_ID.to_string(), json!(format!("msg-{order_id}")))];
-        call_route(&handle, ORDERS, order.clone(), headers).await?;
+        call_route(&broker, ORDERS, order.clone(), headers).await?;
     }
 
     let mut conn = pool.get().await?;
@@ -258,22 +273,28 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
     let result = WorkflowHandleClient::single(pool.clone(), url)
         .handle(execution.exec_id)
         .result_raw_with_timeout(Duration::from_secs(60))
-        .await?;
+        .await
+        .map_err(|e| format!("workflow {order_id}: {e}"))?;
+    Ok((order_id, result))
+}
 
-    camel.stop().await?;
-    cancel.cancel();
-    runner.stop().await;
-    let inventory_calls = reserved
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .iter()
-        .filter(|id| **id == order_id)
-        .count();
-    Ok(Outcome {
-        order_id,
-        result,
-        inventory_calls,
-    })
+/// Makes sure that the result is correct and that the inventory route ran
+/// one time.
+fn check(order_id: &str, result: &Value, inventory_calls: usize) -> Result<(), String> {
+    let expected = json!({
+        "order_id": order_id,
+        "reservation": {"sku": "sku-1", "reserved": 2},
+        "payment": {"approved": true, "amount": 42},
+    });
+    if *result != expected {
+        return Err(format!("result {result} is not {expected}"));
+    }
+    if inventory_calls != 1 {
+        return Err(format!(
+            "the example sent the order two times, but the inventory route ran {inventory_calls} times"
+        ));
+    }
+    Ok(())
 }
 
 #[derive(diesel::QueryableByName)]
@@ -282,12 +303,13 @@ struct Present {
     present: bool,
 }
 
-/// Applies the harvest schema if it is missing. Then applies the claim table.
+/// Applies the harvest schema if it is missing. Then it creates the claim
+/// table. In production, apply the harvest migrations before you start.
 async fn migrate(url: &str) -> Result<(), BoxError> {
     use diesel_async::RunQueryDsl;
 
     let mut conn = AsyncPgConnection::establish(url).await?;
-    // Lets one run at a time migrate. The lock stops when the connection closes.
+    // Only one run at a time can apply migrations.
     conn.batch_execute("SELECT pg_advisory_lock(7319001)")
         .await?;
     let schema = diesel::sql_query(
@@ -300,15 +322,20 @@ async fn migrate(url: &str) -> Result<(), BoxError> {
             .await?;
     }
     harvest_camel::external::migrate(&mut conn).await?;
+    conn.batch_execute("SELECT pg_advisory_unlock(7319001)")
+        .await?;
     Ok(())
 }
 
 #[tokio::main]
 async fn main() -> Result<(), BoxError> {
-    let url = std::env::var("DATABASE_URL").map_err(|_| "set DATABASE_URL to a Postgres URL")?;
-    let outcome = run(&url).await?;
-    println!("{}", serde_json::to_string_pretty(&outcome.result)?);
-    Ok(outcome.check()?)
+    let url = std::env::var("DATABASE_URL")
+        .ok()
+        .filter(|url| !url.is_empty())
+        .ok_or("set DATABASE_URL to a Postgres URL")?;
+    let result = run(&url).await?;
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -323,7 +350,8 @@ mod tests {
             eprintln!("skipping: set {DB_ENV} to a Postgres URL to run the example");
             return;
         };
-        let outcome = run(&url).await.expect("the order flow completes");
-        outcome.check().unwrap();
+        run(&url)
+            .await
+            .expect("the order flow completes and checks");
     }
 }

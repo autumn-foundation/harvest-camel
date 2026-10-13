@@ -31,6 +31,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16
@@ -52,7 +53,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --all-targets
       - run: cargo test --doc
-      # Run the example as a user does. It fails without a database.
+      # Run the example as a user does. If DATABASE_URL is not set, it fails.
       - run: cargo run --example order_flow
         env:
           DATABASE_URL: ${{ env.HARVEST_CAMEL_TEST_DATABASE_URL }}

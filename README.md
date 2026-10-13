@@ -21,9 +21,10 @@ camel ↔ harvest compatibility matrix.
 
 ## Example
 
-[`examples/order_flow.rs`](examples/order_flow.rs) runs all three boundaries
-against a real harvest worker. It needs only Postgres. `direct:` routes
-replace the real connectors.
+[`examples/order_flow.rs`](examples/order_flow.rs) runs the three durability
+boundaries (the `harvest:` producer, an activity, an external activity) with
+a real harvest worker. It needs only Postgres. `direct:` routes replace the
+real connectors.
 
 ```sh
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
@@ -31,7 +32,7 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
 ```
 
 The example checks its result and exits with an error if it is wrong. CI runs
-it on each pull request.
+it.
 
 ## Layering
 
