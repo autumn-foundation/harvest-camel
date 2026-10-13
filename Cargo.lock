@@ -710,9 +710,9 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "camel-api"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8933c665fd8373a59caff4e92cdd6f9714573ebb6c5fc30009f61177645c9471"
+checksum = "6a68c099293a4a4adbd7251b636c401746f288d071b1b1e91340486fc161fbed"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -737,9 +737,9 @@ dependencies = [
 
 [[package]]
 name = "camel-auth"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67b3c30e12f21b486b227f525af2496ecceae27ce51002a2fc55bc75aa429210"
+checksum = "682a56c25e37439839239ed05d132531ec7b0c7aac544679e67752263f3561c9"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -764,9 +764,9 @@ dependencies = [
 
 [[package]]
 name = "camel-bean"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "99ed250cc1a82329c7be773a98768caf66178bf8ee6a3dafa9520c3d3c6f3250"
+checksum = "636fea1163e9c691927ee1ed810474eb1b01fb491f0b80e0a9850fd1f87c675d"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -780,21 +780,21 @@ dependencies = [
 
 [[package]]
 name = "camel-bean-macros"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e7bb5a3d8c2e9d6530e746a627aa6e01194f4cf85534e9e8cdd6d92da408478"
+checksum = "7a8b944b4adbfedfdf702a80744f4a538699ad2a411e401a7cabbcf2bda579ca"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_json",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
 name = "camel-builder"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3d0f0953948c4e44a231eae45c896fb82f8e1adf2e7761e8a020ada19a232c7"
+checksum = "19f724dce2baf5f49a4a1c15c634093e8a775e7a6fe0ea084fece43bf3b0260d"
 dependencies = [
  "camel-api",
  "camel-auth",
@@ -808,9 +808,9 @@ dependencies = [
 
 [[package]]
 name = "camel-component-api"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0dcfa5a17b31f29513306d9ff203dc49c30db22e1d1aecd40c9b6707881bd056"
+checksum = "51ffd971bfa8c0f8bded145881ab12632acc2aad627754d77a15bd8fa16e4686"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -833,9 +833,9 @@ dependencies = [
 
 [[package]]
 name = "camel-component-direct"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "723e3444cfedd49b7003522cf4160fee3bc76474ed10259c2dd6691f39ff6789"
+checksum = "51fa5d27d439d7b987313902ebdc2044503474a4426e60274f8f0659bb22e1a5"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -848,9 +848,9 @@ dependencies = [
 
 [[package]]
 name = "camel-core"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "246963588b1b763c57ff6d3bdebe3295ffdaf69b51b2f3789830678631f0ea39"
+checksum = "c8f66a1c08d7c6665f44f60c53e809f7af7bf53986a896abd850d45f14935144"
 dependencies = [
  "arc-swap",
  "async-stream",
@@ -886,9 +886,9 @@ dependencies = [
 
 [[package]]
 name = "camel-endpoint"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de7bdce56d31f7c8b9aa8caf6e4eb42f8e37c156a1df1064dee047595013e1b6"
+checksum = "abac4d9948ab2e74c6e305372e7a93f2417f987a63ef552ae40adb55ae789b01"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -900,20 +900,20 @@ dependencies = [
 
 [[package]]
 name = "camel-endpoint-macros"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5305333544f29eb5c4a6b4486fc1aa9c7ab3067db2df7806341869f4b73afc74"
+checksum = "5853a58ca00786a6345e1f50b944674f8ef397c80b650d1ef26c61977e9dd3db"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.6",
 ]
 
 [[package]]
 name = "camel-language-api"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a2fe7c3d7bbc5461578bbfb08a5d1427627151b52ccb0ced8627ca14e6ca7d40"
+checksum = "34c15ba21a583c3424d838bb8415b2411f6e14b65b4d00b88c20d744e3f85bf1"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -923,9 +923,9 @@ dependencies = [
 
 [[package]]
 name = "camel-language-simple"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0751a327bdcde7e27a66f5bfcee06dc4808b75243c9103d4ab8fc7ea2f9e7d1"
+checksum = "011396eaa7f05c66e48f83a467453b5ceb55d3d8c5819b44a5d4cde9c9bb0e20"
 dependencies = [
  "async-trait",
  "camel-api",
@@ -935,9 +935,9 @@ dependencies = [
 
 [[package]]
 name = "camel-processor"
-version = "0.55.0"
+version = "0.57.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57cf39de58e3eb4948589ac5ea41f8f786d3011851ee3c912442c66e7f80ea7d"
+checksum = "af73b31692241d2473abea0a0cddfa95ab68077879f0d8e3711315f6c5dac718"
 dependencies = [
  "async-stream",
  "async-trait",
@@ -2740,9 +2740,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.52.1"
+version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93e842fa72fd1e50ca4676a527641c13f5ee0d423ac699bfe1cd2afa3a4fdbac"
+checksum = "f622c574a29fb3034a0a90645afee194dfedc75fc124228801b6e77041075bd1"
 dependencies = [
  "ahash",
  "bytecount",
@@ -2768,22 +2768,23 @@ dependencies = [
 
 [[package]]
 name = "jsonschema-regex"
-version = "0.52.1"
+version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5d90ea83fa606c96f0b4737ecedf1fa6b624272022edc42039565f8d8af0b78"
+checksum = "a968fffd387b2ab005bf00c1851f5d26e90df05b6f7ad609ed0d620033cca5e7"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "jsonschema-value"
-version = "0.52.1"
+version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da4ab4cbe58181a117d8c3582844ce20b07184319b51ba6d756596c1c451aebc"
+checksum = "39b7670345e5ce87371339d13705dbb9276b7e3e934bbe1efa2c6734a1f65a96"
 dependencies = [
  "ahash",
  "bytecount",
  "fraction",
+ "getrandom 0.3.4",
  "num-cmp",
  "num-traits",
  "serde_json",
@@ -3298,9 +3299,9 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "opentelemetry"
-version = "0.32.0"
+version = "0.33.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0142c63252a9e054e68a4c61a5778f7b14f576274d593f8ce883d191a099682"
+checksum = "8c1f1a6ac9c875a4941e4c7c085b61e8f4daa326de03b4701768c3491a6ad9ee"
 dependencies = [
  "futures-core",
  "futures-sink",
@@ -3950,9 +3951,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.52.1"
+version = "0.58.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d38a014525040cdc9893361b7419bcf1f43b7ba7055eabaf6d91d6b75caa8b3f"
+checksum = "558f3855529c0a7e78a48e409fa653456e55f1b167eab4109c16a255b7727e3f"
 dependencies = [
  "ahash",
  "fluent-uri",
