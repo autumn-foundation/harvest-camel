@@ -24,6 +24,8 @@
 //!
 //! See the README for the wiring, the dedupe rules and the required route
 //! configuration ([`check_route`]).
+// `camel_api::CamelError` is large and dictated by camel's trait signatures.
+#![allow(clippy::result_large_err)]
 
 mod check;
 pub mod external;
