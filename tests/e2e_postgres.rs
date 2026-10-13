@@ -172,6 +172,7 @@ async fn camel_with_route(
     (camel, producer)
 }
 
+#[allow(clippy::result_large_err)]
 async fn send(producer: &BoxProcessor, message: Message) -> Result<Exchange, CamelError> {
     producer.clone().oneshot(Exchange::new(message)).await
 }
