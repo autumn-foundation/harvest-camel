@@ -19,6 +19,20 @@ camel ↔ harvest compatibility matrix.
 |---------------|----------------|------------|------|
 | 0.1           | 0.7            | 0.55       | 1.89 |
 
+## Example
+
+[`examples/order_flow.rs`](examples/order_flow.rs) runs all three boundaries
+against a real harvest worker. It needs only Postgres. `direct:` routes
+replace the real connectors.
+
+```sh
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
+  cargo run --example order_flow
+```
+
+The example checks its result and exits with an error if it is wrong. CI runs
+it on each pull request.
+
 ## Layering
 
 ```text
@@ -337,7 +351,7 @@ cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test                              # unit + camel-only integration tests
 HARVEST_CAMEL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
-  cargo test --test e2e_postgres --test e2e_external   # applies the harvest schema on first use
+  cargo test --test e2e_postgres --test e2e_external --example order_flow   # applies the harvest schema on first use
 ```
 
 `e2e_external` runs a real harvest worker: a workflow parks on an external
@@ -349,7 +363,7 @@ notice and pass without running. CI runs them against a `postgres:16` service
 container.
 
 Kafka is not a dependency: `autumn-harvest-plugin`'s `connectors` feature pulls
-in no broker client. A `kafka-order-flow` example with a crash test is planned.
+in no broker client. A Kafka example with a crash test is planned.
 
 ## License
 

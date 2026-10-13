@@ -7,9 +7,10 @@
 //!        ─► direct:payment-gateway ─► harvest-complete:charge_card
 //! ```
 //!
-//! The `direct:` routes stand in for real connectors (Kafka, HTTP, JMS).
+//! The `direct:` routes replace real connectors (Kafka, HTTP, JMS).
 //! The example sends the same order two times, as a broker does after a
 //! crash. Harvest starts one workflow, so stock is reserved one time.
+//! The example checks its result and exits with an error if it is wrong.
 //!
 //! ```sh
 //! DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
@@ -48,7 +49,8 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
 const ORDERS: &str = "direct:orders";
 const INVENTORY: &str = "direct:inventory";
-/// Header with a redelivery-stable message id. Harvest dedupes on it.
+/// Header with a message id that does not change on redelivery.
+/// Harvest uses it to find duplicates.
 const MESSAGE_ID: &str = "MessageId";
 
 // ─────────────────────────── harvest: the durable middle ───────────────────────────
@@ -59,7 +61,7 @@ async fn process_order(ctx: &WorkflowContext, order: Value) -> Result<Value, Str
         .execute_activity(&reserve_stock_info(), order.clone())
         .await
         .map_err(|e| e.to_string())?;
-    // Parks durably until camel completes the token.
+    // Waits until camel completes the token. The wait survives a crash.
     let payment = ctx
         .execute_activity_external("charge_card", order.clone(), "default", 300)
         .await
@@ -141,21 +143,40 @@ fn json_body(ex: &Exchange) -> Value {
 /// What one run of the flow did.
 #[derive(Debug)]
 pub struct Outcome {
-    /// The order id used for this run.
+    /// The order id of this run.
     pub order_id: String,
     /// The workflow result.
     pub result: Value,
-    /// How many times the inventory route was called for this order.
+    /// The number of inventory calls for this order.
     pub inventory_calls: usize,
+}
+
+impl Outcome {
+    /// Makes sure that the order is reserved one time and charged.
+    pub fn check(&self) -> Result<(), String> {
+        let expected = json!({
+            "order_id": self.order_id,
+            "reservation": {"sku": "sku-1", "reserved": 2},
+            "payment": {"approved": true, "amount": 42},
+        });
+        if self.result != expected {
+            return Err(format!("result {} is not {expected}", self.result));
+        }
+        if self.inventory_calls != 1 {
+            return Err(format!(
+                "the order was sent two times, but stock was reserved {} times",
+                self.inventory_calls
+            ));
+        }
+        Ok(())
+    }
 }
 
 /// Runs the flow against the Postgres database at `url`.
 pub async fn run(url: &str) -> Result<Outcome, BoxError> {
     migrate(url).await?;
-    let pool: DbPool = deadpool::managed::Pool::builder(AsyncDieselConnectionManager::<
-        AsyncPgConnection,
-    >::new(url))
-    .build()?;
+    let manager = AsyncDieselConnectionManager::<AsyncPgConnection>::new(url);
+    let pool: DbPool = deadpool::managed::Pool::builder(manager).build()?;
 
     // camel: register the components, then add and start the routes.
     let (source, harvest_component) = HarvestBridge::new("orders");
@@ -174,8 +195,9 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
     handle.resolve(&camel, INVENTORY)?;
     handle.resolve(&camel, ORDERS)?;
 
-    // harvest: a worker that runs the workflow and the activity.
-    // Production: `HarvestPlugin` does this, the migrations and the dead-letter sink.
+    // harvest: a worker runs the workflow and the activity. In production,
+    // `HarvestPlugin` starts the worker, applies the migrations and adds a
+    // dead-letter sink.
     let runner = HarvestRunner::start(
         autumn_harvest::HarvestBuilder::new()
             .workflows(vec![process_order_info()])
@@ -218,11 +240,11 @@ pub async fn run(url: &str) -> Result<Outcome, BoxError> {
         async move { connector.run(cancel).await }
     });
 
-    // A fresh id for each run. A fixed id replays the first run's workflow.
+    // Use a new id for each run. With a fixed id, harvest gives the result of the first run.
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
     let order_id = format!("order-{nanos:x}");
     let order = json!({"order_id": order_id, "sku": "sku-1", "quantity": 2, "amount": 42});
-    // Send the same message two times. Each send returns when harvest holds it.
+    // Send the same message two times. Each send returns when harvest holds the message.
     for _ in 0..2 {
         let headers = [(MESSAGE_ID.to_string(), json!(format!("msg-{order_id}")))];
         call_route(&handle, ORDERS, order.clone(), headers).await?;
@@ -260,12 +282,12 @@ struct Present {
     present: bool,
 }
 
-/// Applies the harvest schema if it is missing, then the claim table.
+/// Applies the harvest schema if it is missing. Then applies the claim table.
 async fn migrate(url: &str) -> Result<(), BoxError> {
     use diesel_async::RunQueryDsl;
 
     let mut conn = AsyncPgConnection::establish(url).await?;
-    // Serializes concurrent first runs. Closing the connection releases it.
+    // Lets one run at a time migrate. The lock stops when the connection closes.
     conn.batch_execute("SELECT pg_advisory_lock(7319001)")
         .await?;
     let schema = diesel::sql_query(
@@ -286,10 +308,7 @@ async fn main() -> Result<(), BoxError> {
     let url = std::env::var("DATABASE_URL").map_err(|_| "set DATABASE_URL to a Postgres URL")?;
     let outcome = run(&url).await?;
     println!("{}", serde_json::to_string_pretty(&outcome.result)?);
-    if outcome.inventory_calls != 1 {
-        return Err(format!("stock reserved {} times", outcome.inventory_calls).into());
-    }
-    Ok(())
+    Ok(outcome.check()?)
 }
 
 #[cfg(test)]
@@ -299,23 +318,12 @@ mod tests {
     const DB_ENV: &str = "HARVEST_CAMEL_TEST_DATABASE_URL";
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-    async fn redelivered_order_is_reserved_once_and_charged() {
+    async fn order_is_reserved_one_time_and_charged() {
         let Ok(url) = std::env::var(DB_ENV) else {
             eprintln!("skipping: set {DB_ENV} to a Postgres URL to run the example");
             return;
         };
         let outcome = run(&url).await.expect("the order flow completes");
-        assert_eq!(
-            outcome.result,
-            json!({
-                "order_id": outcome.order_id,
-                "reservation": {"sku": "sku-1", "reserved": 2},
-                "payment": {"approved": true, "amount": 42},
-            }),
-        );
-        assert_eq!(
-            outcome.inventory_calls, 1,
-            "the order is sent twice, but stock is reserved once"
-        );
+        outcome.check().unwrap();
     }
 }
