@@ -25,6 +25,10 @@
 //! See the README for the wiring, the dedupe rules and the required route
 //! configuration ([`check_route`]).
 
+// camel 0.57 `CamelError` is 168 bytes. The camel traits and this API take
+// and return it by value, so a box does not fit.
+#![allow(clippy::result_large_err)]
+
 mod check;
 pub mod external;
 mod route;

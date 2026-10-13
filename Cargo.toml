@@ -13,9 +13,9 @@ categories = ["asynchronous", "network-programming"]
 [dependencies]
 autumn-harvest = "0.7.0"
 autumn-harvest-plugin = { version = "0.7.0", features = ["connectors"] }
-camel-api = "0.55"
-camel-component-api = "0.55"
-camel-core = "0.55"
+camel-api = "0.57"
+camel-component-api = "0.57"
+camel-core = "0.57"
 tokio = { version = "1", features = ["full"] }
 tower = { version = "0.5", features = ["util"] }
 async-trait = "0.1"
@@ -33,8 +33,8 @@ uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 autumn-harvest = { version = "0.7.0", features = ["testing"] }
-camel-builder = "0.55"
-camel-component-direct = "0.55"
+camel-builder = "0.57"
+camel-component-direct = "0.57"
 
 # With `test = true`, `cargo test` runs the test in the example.
 [[example]]
