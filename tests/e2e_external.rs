@@ -26,8 +26,8 @@ use autumn_harvest_plugin::connector::{
 };
 use autumn_harvest_plugin::{
     HarvestBatchConfig, HarvestDatabaseConfig, HarvestMode, HarvestOutboxConfig,
-    HarvestReadinessConfig, HarvestRunner, HarvestRunnerResources, HarvestRuntimeConfig,
-    HarvestStartupConfig,
+    HarvestReadinessConfig, HarvestRedisConfig, HarvestRunner, HarvestRunnerResources,
+    HarvestRuntimeConfig, HarvestStartupConfig,
 };
 use camel_api::{Body, CamelError, Exchange, Message, Value};
 use camel_builder::{RouteBuilder, StepAccumulator};
@@ -90,6 +90,7 @@ impl Stack {
                 batch: HarvestBatchConfig::default(),
                 readiness: HarvestReadinessConfig::default(),
                 startup: HarvestStartupConfig::default(),
+                redis: HarvestRedisConfig::default(),
             },
             HarvestRunnerResources::new(pool.clone()),
         )
