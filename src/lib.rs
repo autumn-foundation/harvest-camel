@@ -24,9 +24,6 @@
 //!
 //! See the README for the wiring, the dedupe rules and the required route
 //! configuration ([`check_route`]).
-// `camel_api::CamelError` is large and dictated by camel's trait signatures.
-#![allow(clippy::result_large_err)]
-
 // camel 0.57 `CamelError` is 168 bytes. The camel traits and this API take
 // and return it by value, so a box does not fit.
 #![allow(clippy::result_large_err)]

@@ -1,6 +1,6 @@
 [package]
 name = "harvest-camel"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
@@ -11,8 +11,8 @@ keywords = ["camel", "workflow", "integration", "durable", "eip"]
 categories = ["asynchronous", "network-programming"]
 
 [dependencies]
-autumn-harvest = "0.7.0"
-autumn-harvest-plugin = { version = "0.7.0", features = ["connectors"] }
+autumn-harvest = "0.8.0"
+autumn-harvest-plugin = { version = "0.8.0", features = ["connectors"] }
 camel-api = "0.57"
 camel-component-api = "0.57"
 camel-core = "0.57"
@@ -23,7 +23,7 @@ serde_json = "1"
 thiserror = "2"
 tracing = "0.1"
 # Claim table and external-task settlement. Versions match autumn-harvest
-# 0.7.0 so the pool type is the engine's own `DbPool`.
+# 0.8.0 so the pool type is the engine's own `DbPool`.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 deadpool = "0.13"
 diesel = { version = "2.3", features = ["postgres_backend", "uuid", "chrono"] }
@@ -32,7 +32,7 @@ tokio-util = { version = "0.7", features = ["rt"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
-autumn-harvest = { version = "0.7.0", features = ["testing"] }
+autumn-harvest = { version = "0.8.0", features = ["testing"] }
 camel-builder = "0.57"
 camel-component-direct = "0.57"
 
