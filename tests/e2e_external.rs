@@ -81,8 +81,8 @@ impl Stack {
                 .build(),
             &HarvestRuntimeConfig {
                 mode: HarvestMode::External,
-                worker_enabled: true,
-                scheduler_enabled: true,
+                worker_enabled: Some(true),
+                scheduler_enabled: Some(true),
                 database: HarvestDatabaseConfig {
                     url: Some(url.clone()),
                 },
@@ -91,6 +91,7 @@ impl Stack {
                 readiness: HarvestReadinessConfig::default(),
                 startup: HarvestStartupConfig::default(),
                 redis: HarvestRedisConfig::default(),
+                ..HarvestRuntimeConfig::default()
             },
             HarvestRunnerResources::new(pool.clone()),
         )
