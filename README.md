@@ -7,8 +7,8 @@ Bridge [rust-camel](https://github.com/kennycallado/rust-camel) and
 - **rust-camel** is an Apache Camel–style integration framework. It has about 30
   connectors (Kafka, JMS, SQL, HTTP, file, …) and tower-based Enterprise
   Integration Patterns. It persists no message state.
-- **autumn-harvest** is a Postgres-backed, event-sourced durable workflow
-  engine. It provides workflows, activities, signals, timers and idempotent
+- **autumn-harvest** is an event-sourced durable workflow engine on Postgres
+  or SQLite. It provides workflows, activities, signals, timers and idempotent
   start.
 
 The glue lives here, not in either upstream. That keeps each project's
@@ -340,6 +340,69 @@ Scope and caveats:
   `#[doc(hidden)]` `store::load_history_with_codecs`. Both are pinned by the
   compatibility table above and covered by the e2e tests.
 
+## SQLite
+
+The `sqlite` feature runs the inbound bridge on a single SQLite file, with no
+Postgres server. It feeds an `autumn_harvest_sqlite::SqliteRuntime` that you
+own, so it fits a single-writer daemon.
+
+```toml
+harvest-camel = { version = "0.3", default-features = false, features = ["sqlite"] }
+```
+
+| Bridge | Postgres | SQLite |
+|--------|----------|--------|
+| Inbound (`harvest:` → start / signal-with-start) | `ConnectorRuntime` | `sqlite::SqliteInbound` |
+| Outbound (`call_route_from_activity`) | yes | yes |
+| Request/reply (`harvest-external:`) | yes | no: the SQLite engine refuses external activities ([autumn-harvest#2607](https://github.com/autumn-foundation/autumn-harvest/issues/2607)) |
+
+`SqliteInbound` splits a pass into three phases, so the runtime stays in one
+task:
+
+```rust,ignore
+use harvest_camel::sqlite::{SqliteDeadLetters, SqliteInbound};
+
+let (source, component) = HarvestBridge::new("orders");
+camel.register_component(component);
+let binding = SourceBinding::starts("orders", "orders", "fulfil")
+    .idempotency_mode(IdempotencyMode::WorkflowId)
+    .map_json(|_ctx, body: Value| Ok::<_, &str>(MappedMessage::new(id_of(&body), body)));
+let inbound = SqliteInbound::new(binding, source)?
+    .with_dead_letter_sink(Arc::new(SqliteDeadLetters::new(Arc::new(
+        SqliteAuthStore::open(&harvest_file)?,
+    ))));
+
+// Any task: wait for messages and map them. No runtime borrow.
+let batch = inbound.receive(Duration::from_millis(500)).await?;
+// The runtime task: write them. `apply` never awaits.
+let applied = batch.apply(&mut runtime);
+// Any task: ack, abandon or dead-letter each message.
+let summary = inbound.settle(applied).await;
+```
+
+Both batch types are `Send + 'static`, so they can cross a channel to the task
+that owns the runtime. `SqliteInbound::pump` runs the three phases in a row
+for a caller that holds the runtime itself.
+
+The rules are those of the Postgres connector runtime. The dedupe key, the
+poison strikes and the dead-letter record come from the same
+`autumn-harvest-plugin` functions. A message is acked only after its write
+returns, and a dead letter only after the sink write succeeds. Two binding
+shapes are refused at construction, as the plugin refuses them on SQLite:
+
+- A `Starts` binding must set `IdempotencyMode::WorkflowId` and map a stable
+  workflow id. SQLite has no start idempotency table, so a redelivery attaches
+  to the run of that id.
+- A binding must not set `SourceBinding::queue`. One SQLite writer drains every
+  queue.
+
+`tests/backend_parity.rs` runs one scenario table through both backends and
+asserts the same pass summaries, executions, signals and dead letters.
+
+The `postgres` feature (on by default) builds the request/reply bridge and its
+claim table. Without it this crate adds no diesel dependency of its own.
+autumn-harvest 0.10 still links its Postgres driver.
+
 ## Payload limits
 
 By default harvest caps activity input and results at 2 MiB, workflow input
@@ -353,8 +416,10 @@ the caps.
 cargo fmt --all --check
 cargo clippy --all-targets -- -D warnings
 cargo test                              # unit + camel-only integration tests
+cargo test --no-default-features --features sqlite   # the SQLite bridge, no server needed
 HARVEST_CAMEL_TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/harvest_camel_test \
-  cargo test --test e2e_postgres --test e2e_external --example order_flow   # applies the harvest schema on first use
+  cargo test --all-features --test e2e_postgres --test e2e_external --test backend_parity \
+  --example order_flow   # applies the harvest schema on first use
 ```
 
 `e2e_external` runs a real harvest worker: a workflow parks on an external

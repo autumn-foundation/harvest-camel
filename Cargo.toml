@@ -25,11 +25,20 @@ tracing = "0.1"
 # Claim table and external-task settlement. Versions match autumn-harvest
 # 0.10.0 so the pool type is the engine's own `DbPool`.
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-deadpool = "0.13"
-diesel = { version = "2.3", features = ["postgres_backend", "uuid", "chrono"] }
-diesel-async = { version = "0.9", features = ["deadpool", "postgres"] }
-tokio-util = { version = "0.7", features = ["rt"] }
-uuid = { version = "1", features = ["v4"] }
+deadpool = { version = "0.13", optional = true }
+diesel = { version = "2.3", features = ["postgres_backend", "uuid", "chrono"], optional = true }
+diesel-async = { version = "0.9", features = ["deadpool", "postgres"], optional = true }
+tokio-util = { version = "0.7", features = ["rt"], optional = true }
+uuid = { version = "1", features = ["v4"], optional = true }
+# The SQLite inbound bridge. The version matches autumn-harvest 0.10.0.
+autumn-harvest-sqlite = { version = "0.10.0", optional = true }
+
+[features]
+default = ["postgres"]
+# The request/reply bridge and its claim table, on Postgres.
+postgres = ["dep:deadpool", "dep:diesel", "dep:diesel-async", "dep:tokio-util", "dep:uuid"]
+# The inbound bridge onto a caller-owned SQLite runtime.
+sqlite = ["dep:autumn-harvest-sqlite"]
 
 [dev-dependencies]
 autumn-harvest = { version = "0.10.0", features = ["testing"] }
@@ -40,3 +49,20 @@ camel-component-direct = "0.57"
 [[example]]
 name = "order_flow"
 test = true
+required-features = ["postgres"]
+
+[[test]]
+name = "e2e_postgres"
+required-features = ["postgres"]
+
+[[test]]
+name = "e2e_external"
+required-features = ["postgres"]
+
+[[test]]
+name = "e2e_sqlite"
+required-features = ["sqlite"]
+
+[[test]]
+name = "backend_parity"
+required-features = ["postgres", "sqlite"]
