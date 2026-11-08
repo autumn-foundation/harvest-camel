@@ -22,6 +22,14 @@
 //! Nothing between these boundaries is durable: a camel `Exchange` is not
 //! serializable and an in-flight pipeline dies with the process.
 //!
+//! # Backends
+//!
+//! The `postgres` feature (on by default) builds the request/reply bridge,
+//! `external`. The `sqlite` feature builds `sqlite`, which feeds the
+//! inbound bridge into a caller-owned `autumn_harvest_sqlite::SqliteRuntime`.
+//! The outbound bridge needs neither. Request/reply needs external
+//! activities, which the SQLite engine does not support yet.
+//!
 //! See the README for the wiring, the dedupe rules and the required route
 //! configuration ([`check_route`]).
 // camel 0.57 `CamelError` is 168 bytes. The camel traits and this API take
@@ -29,11 +37,15 @@
 #![allow(clippy::result_large_err)]
 
 mod check;
+#[cfg(feature = "postgres")]
 pub mod external;
 mod route;
 mod source;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 
 pub use check::{RouteCheckError, check_error_handler, check_route};
+#[cfg(feature = "postgres")]
 pub use external::{
     COMPLETE_SCHEME, EXTERNAL_SCHEME, ExternalTasks, FAIL_SCHEME, HEADER_EXTERNAL_TOKEN,
     HarvestExternalComponent, HarvestSettleComponent,
