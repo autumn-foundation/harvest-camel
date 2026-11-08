@@ -17,6 +17,7 @@ camel ↔ harvest compatibility matrix.
 
 | harvest-camel | autumn-harvest | rust-camel | MSRV |
 |---------------|----------------|------------|------|
+| 0.4           | 0.10           | 0.57       | 1.97 |
 | 0.3           | 0.10           | 0.57       | 1.97 |
 | 0.2           | 0.8            | 0.57       | 1.89 |
 | 0.1           | 0.7            | 0.57       | 1.89 |
@@ -347,7 +348,7 @@ Postgres server. It feeds an `autumn_harvest_sqlite::SqliteRuntime` that you
 own, so it fits a single-writer daemon.
 
 ```toml
-harvest-camel = { version = "0.3", default-features = false, features = ["sqlite"] }
+harvest-camel = { version = "0.4", default-features = false, features = ["sqlite"] }
 ```
 
 | Bridge | Postgres | SQLite |

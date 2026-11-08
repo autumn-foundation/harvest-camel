@@ -2415,7 +2415,7 @@ dependencies = [
 
 [[package]]
 name = "harvest-camel"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "async-trait",
  "autumn-harvest",
