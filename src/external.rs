@@ -441,7 +441,8 @@ struct Candidate {
     #[diesel(sql_type = Text)]
     activity_name: String,
     #[diesel(sql_type = Timestamptz)]
-    deadline_at: chrono::DateTime<chrono::Utc>,
+    #[diesel(deserialize_as = autumn_harvest::time::sql::SqlTimestamp)]
+    deadline_at: jiff::Timestamp,
 }
 
 impl Candidate {
@@ -639,7 +640,10 @@ impl Dispatcher {
         );
         msg.set_header(HEADER_WORKFLOW_NAME, handoff.workflow_name.clone());
         msg.set_header(HEADER_ACTIVITY_NAME, handoff.activity_name.clone());
-        msg.set_header(HEADER_EXTERNAL_DEADLINE, handoff.deadline_at.to_rfc3339());
+        msg.set_header(
+            HEADER_EXTERNAL_DEADLINE,
+            autumn_harvest::time::rfc3339(handoff.deadline_at),
+        );
         msg.set_header(HEADER_DISPATCH_ATTEMPT, attempt);
         Ok(Exchange::new(msg))
     }

@@ -17,6 +17,7 @@ camel ↔ harvest compatibility matrix.
 
 | harvest-camel | autumn-harvest | rust-camel | MSRV |
 |---------------|----------------|------------|------|
+| 0.5           | 0.11           | 0.57       | 1.97 |
 | 0.4           | 0.10           | 0.57       | 1.97 |
 | 0.3           | 0.10           | 0.57       | 1.97 |
 | 0.2           | 0.8            | 0.57       | 1.89 |

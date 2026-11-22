@@ -55,7 +55,6 @@ use autumn_harvest_plugin::connector::{
 use autumn_harvest_sqlite::{
     NewDeadLetter, SignalWithStart, SqliteAuthStore, SqliteError, SqliteRuntime,
 };
-use chrono::Utc;
 
 /// Default bound on the messages one [`SqliteInbound::receive`] takes.
 pub const DEFAULT_BATCH_SIZE: usize = 64;
@@ -296,7 +295,7 @@ impl SqliteInbound {
                     // A deterministic poison is quarantined on its first delivery.
                     attempts: i32::try_from(strikes.max(1)).unwrap_or(i32::MAX),
                     payload: message.payload.clone(),
-                    failed_at: Utc::now(),
+                    failed_at: jiff::Timestamp::now(),
                 };
                 match self.sink.write(&entry).await {
                     Ok(_) => {
